@@ -1,0 +1,21 @@
+# ML data quality: training features must be point-in-time correct.
+
+- id: ML-001
+  name: Feature computed after claim submission (leakage)
+  category: ml_data_quality
+  severity: high
+  description: >
+    A denial-model feature row was computed after its claim was submitted, so it may
+    contain information that was not available at prediction time (target leakage).
+  tags: [leakage, point-in-time]
+  expectation: zero_rows
+  sql: |
+    SELECT f.feature_id::text AS defect_key,
+           f.feature_id,
+           f.claim_id,
+           c.submitted_at,
+           f.computed_at,
+           f.computed_at - c.submitted_at AS computed_after_by
+    FROM ml_features f
+    JOIN claims c ON c.claim_id = f.claim_id
+    WHERE f.computed_at > c.submitted_at

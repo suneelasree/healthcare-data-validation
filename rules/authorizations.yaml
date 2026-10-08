@@ -1,0 +1,37 @@
+# Authorizations: payers approve a number of sessions within a date window.
+
+- id: AU-001
+  name: Sessions used beyond the authorized count
+  category: authorizations
+  severity: high
+  description: >
+    More sessions were delivered inside an authorization's date window than the payer
+    approved. Sessions beyond the approved count are typically denied.
+  tags: [cte, group-by, having]
+  expectation: zero_rows
+  sql: |
+    WITH usage AS (
+        SELECT a.authorization_id,
+               a.patient_id,
+               a.payer_name,
+               a.start_date,
+               a.end_date,
+               a.approved_sessions,
+               count(s.session_id) AS sessions_used
+        FROM authorizations a
+        JOIN sessions s
+          ON s.patient_id = a.patient_id
+         AND s.session_date BETWEEN a.start_date AND a.end_date
+        GROUP BY a.authorization_id
+        HAVING count(s.session_id) > a.approved_sessions
+    )
+    SELECT authorization_id::text AS defect_key,
+           authorization_id,
+           patient_id,
+           payer_name,
+           start_date,
+           end_date,
+           approved_sessions,
+           sessions_used,
+           sessions_used - approved_sessions AS sessions_over
+    FROM usage

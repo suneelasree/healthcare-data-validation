@@ -1,0 +1,21 @@
+# Licensing: only currently licensed providers may deliver billable care.
+
+- id: LI-001
+  name: Session delivered after the provider's license expired
+  category: licensing
+  severity: critical
+  description: >
+    The session date is later than the provider's license expiry. Services by an
+    unlicensed provider are not reimbursable and must be reported.
+  tags: [credentialing]
+  expectation: zero_rows
+  sql: |
+    SELECT s.session_id::text AS defect_key,
+           s.session_id,
+           s.session_date,
+           p.provider_id,
+           p.license_number,
+           p.license_expiry
+    FROM sessions s
+    JOIN providers p ON p.provider_id = s.provider_id
+    WHERE s.session_date > p.license_expiry

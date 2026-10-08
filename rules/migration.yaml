@@ -1,0 +1,108 @@
+# Migration reconciliation: legacy_* (source) against the migrated target tables.
+# Three layers, cheapest first: row counts, column aggregates, then full row diffs.
+
+- id: MG-001
+  name: Row count differs between legacy and target
+  category: migration
+  severity: critical
+  description: >
+    The number of rows in a migrated table does not match its legacy source.
+  tags: [reconciliation, counts]
+  expectation: zero_rows
+  sql: |
+    WITH counts AS (
+        SELECT 'patients' AS table_name,
+               (SELECT count(*) FROM legacy_patients) AS legacy_rows,
+               (SELECT count(*) FROM patients)        AS target_rows
+        UNION ALL
+        SELECT 'sessions', (SELECT count(*) FROM legacy_sessions), (SELECT count(*) FROM sessions)
+        UNION ALL
+        SELECT 'claims', (SELECT count(*) FROM legacy_claims), (SELECT count(*) FROM claims)
+    )
+    SELECT table_name AS defect_key,
+           table_name,
+           legacy_rows,
+           target_rows,
+           target_rows - legacy_rows AS difference
+    FROM counts
+    WHERE legacy_rows <> target_rows
+
+- id: MG-002
+  name: Column aggregate differs between legacy and target
+  category: migration
+  severity: high
+  description: >
+    A sum or distinct count over a key column differs between legacy and target, which
+    catches value corruption that row counts alone miss.
+  tags: [reconciliation, aggregates]
+  expectation: zero_rows
+  sql: |
+    WITH metrics AS (
+        SELECT 'sessions.billed_minutes_sum' AS metric,
+               (SELECT sum(billed_minutes) FROM legacy_sessions)::numeric AS legacy_value,
+               (SELECT sum(billed_minutes) FROM sessions)::numeric        AS target_value
+        UNION ALL
+        SELECT 'sessions.distinct_patients',
+               (SELECT count(DISTINCT patient_id) FROM legacy_sessions),
+               (SELECT count(DISTINCT patient_id) FROM sessions)
+        UNION ALL
+        SELECT 'claims.billed_amount_sum',
+               (SELECT sum(billed_amount) FROM legacy_claims),
+               (SELECT sum(billed_amount) FROM claims)
+        UNION ALL
+        SELECT 'claims.distinct_claim_numbers',
+               (SELECT count(DISTINCT claim_number) FROM legacy_claims),
+               (SELECT count(DISTINCT claim_number) FROM claims)
+        UNION ALL
+        SELECT 'patients.distinct_mrns',
+               (SELECT count(DISTINCT mrn) FROM legacy_patients),
+               (SELECT count(DISTINCT mrn) FROM patients)
+    )
+    SELECT metric AS defect_key,
+           metric,
+           legacy_value,
+           target_value,
+           target_value - legacy_value AS difference
+    FROM metrics
+    WHERE legacy_value IS DISTINCT FROM target_value
+
+- id: MG-003
+  name: Row-level difference between legacy and target
+  category: migration
+  severity: high
+  description: >
+    Full row comparison with EXCEPT in both directions. Finds rows missing from the
+    target, unexpected rows, and rows whose values changed, including changes that
+    leave counts and aggregates intact.
+  tags: [reconciliation, except]
+  expectation: zero_rows
+  sql: |
+    WITH diffs AS (
+        SELECT 'patients' AS table_name, patient_id AS row_id, 'legacy' AS side
+        FROM (SELECT * FROM legacy_patients EXCEPT SELECT * FROM patients) d
+        UNION ALL
+        SELECT 'patients', patient_id, 'target'
+        FROM (SELECT * FROM patients EXCEPT SELECT * FROM legacy_patients) d
+        UNION ALL
+        SELECT 'sessions', session_id, 'legacy'
+        FROM (SELECT * FROM legacy_sessions EXCEPT SELECT * FROM sessions) d
+        UNION ALL
+        SELECT 'sessions', session_id, 'target'
+        FROM (SELECT * FROM sessions EXCEPT SELECT * FROM legacy_sessions) d
+        UNION ALL
+        SELECT 'claims', claim_id, 'legacy'
+        FROM (SELECT * FROM legacy_claims EXCEPT SELECT * FROM claims) d
+        UNION ALL
+        SELECT 'claims', claim_id, 'target'
+        FROM (SELECT * FROM claims EXCEPT SELECT * FROM legacy_claims) d
+    )
+    SELECT table_name || ':' || row_id AS defect_key,
+           table_name,
+           row_id,
+           CASE
+               WHEN count(*) = 2         THEN 'values differ'
+               WHEN min(side) = 'legacy' THEN 'missing from target'
+               ELSE 'unexpected in target'
+           END AS difference
+    FROM diffs
+    GROUP BY table_name, row_id

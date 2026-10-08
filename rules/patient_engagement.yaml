@@ -1,0 +1,67 @@
+# Patient engagement: continuity of care and retention.
+
+- id: PE-001
+  name: Active patient with a gap of more than 30 days
+  category: patient_engagement
+  severity: low
+  description: >
+    An active patient went more than 30 days between consecutive sessions. LAG() compares
+    each session with the patient's previous one; long gaps predict drop-out.
+  tags: [window-function, lag]
+  expectation: zero_rows
+  sql: |
+    WITH ordered AS (
+        SELECT s.session_id,
+               s.patient_id,
+               s.session_date,
+               LAG(s.session_date) OVER (
+                   PARTITION BY s.patient_id ORDER BY s.session_date, s.session_id
+               ) AS previous_date
+        FROM sessions s
+        JOIN patients p
+          ON p.patient_id = s.patient_id
+         AND p.status = 'active'
+    )
+    SELECT session_id::text AS defect_key,
+           patient_id,
+           previous_date,
+           session_date,
+           session_date - previous_date AS gap_days
+    FROM ordered
+    WHERE session_date - previous_date > 30
+
+- id: PE-002
+  name: Monthly retention cohort
+  category: patient_engagement
+  severity: low
+  description: >
+    Report-only. Groups patients by the month of their first session and shows the
+    share still attending one, two and three months later.
+  tags: [cohort, report]
+  expectation: report_only
+  sql: |
+    WITH firsts AS (
+        SELECT patient_id, date_trunc('month', min(session_date))::date AS cohort_month
+        FROM sessions
+        GROUP BY patient_id
+    ),
+    activity AS (
+        SELECT DISTINCT
+               s.patient_id,
+               f.cohort_month,
+               (date_part('year', s.session_date) - date_part('year', f.cohort_month)) * 12
+             + (date_part('month', s.session_date) - date_part('month', f.cohort_month)) AS month_offset
+        FROM sessions s
+        JOIN firsts f USING (patient_id)
+    )
+    SELECT cohort_month,
+           count(*) FILTER (WHERE month_offset = 0) AS patients,
+           round(100.0 * count(*) FILTER (WHERE month_offset = 1)
+                 / count(*) FILTER (WHERE month_offset = 0), 1) AS month_1_pct,
+           round(100.0 * count(*) FILTER (WHERE month_offset = 2)
+                 / count(*) FILTER (WHERE month_offset = 0), 1) AS month_2_pct,
+           round(100.0 * count(*) FILTER (WHERE month_offset = 3)
+                 / count(*) FILTER (WHERE month_offset = 0), 1) AS month_3_pct
+    FROM activity
+    GROUP BY cohort_month
+    ORDER BY cohort_month

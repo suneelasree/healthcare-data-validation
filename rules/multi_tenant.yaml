@@ -1,0 +1,56 @@
+# Multi-tenant isolation: a child row must live in the same practice as its parent.
+
+- id: MT-001
+  name: Child row in a different practice than its parent
+  category: multi_tenant
+  severity: critical
+  description: >
+    A row's practice_id differs from its parent's. Cross-tenant rows leak one clinic's
+    data into another clinic's views, reports and exports.
+  tags: [isolation, union]
+  expectation: zero_rows
+  sql: |
+    SELECT 'appointments:' || c.appointment_id AS defect_key, 'appointments' AS child_table,
+           c.practice_id AS child_practice, 'patients' AS parent_table, p.practice_id AS parent_practice
+    FROM appointments c JOIN patients p ON p.patient_id = c.patient_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'appointments:' || c.appointment_id, 'appointments', c.practice_id, 'providers', p.practice_id
+    FROM appointments c JOIN providers p ON p.provider_id = c.provider_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'sessions:' || c.session_id, 'sessions', c.practice_id, 'appointments', p.practice_id
+    FROM sessions c JOIN appointments p ON p.appointment_id = c.appointment_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'clinical_notes:' || c.note_id, 'clinical_notes', c.practice_id, 'sessions', p.practice_id
+    FROM clinical_notes c JOIN sessions p ON p.session_id = c.session_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'deid_notes:' || c.deid_id, 'deid_notes', c.practice_id, 'clinical_notes', p.practice_id
+    FROM deid_notes c JOIN clinical_notes p ON p.note_id = c.note_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'claims:' || c.claim_id, 'claims', c.practice_id, 'sessions', p.practice_id
+    FROM claims c JOIN sessions p ON p.session_id = c.session_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'remittances:' || c.remittance_id, 'remittances', c.practice_id, 'claims', p.practice_id
+    FROM remittances c JOIN claims p ON p.claim_id = c.claim_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'telehealth_logs:' || c.log_id, 'telehealth_logs', c.practice_id, 'sessions', p.practice_id
+    FROM telehealth_logs c JOIN sessions p ON p.session_id = c.session_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'ml_features:' || c.feature_id, 'ml_features', c.practice_id, 'claims', p.practice_id
+    FROM ml_features c JOIN claims p ON p.claim_id = c.claim_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'guardians:' || c.guardian_id, 'guardians', c.practice_id, 'patients', p.practice_id
+    FROM guardians c JOIN patients p ON p.patient_id = c.patient_id
+    WHERE c.practice_id <> p.practice_id
+    UNION ALL
+    SELECT 'authorizations:' || c.authorization_id, 'authorizations', c.practice_id, 'patients', p.practice_id
+    FROM authorizations c JOIN patients p ON p.patient_id = c.patient_id
+    WHERE c.practice_id <> p.practice_id

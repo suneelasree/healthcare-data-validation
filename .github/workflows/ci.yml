@@ -1,0 +1,77 @@
+name: data-validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: theracare
+          POSTGRES_PASSWORD: theracare
+          POSTGRES_DB: theracare
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U theracare -d theracare"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: theracare
+      PGPASSWORD: theracare
+      PGDATABASE: theracare
+      CLEAN_PGDATABASE: theracare_clean
+      # Optional. Without it the AI layer is off and its live tests are skipped.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Seed planted and clean databases
+        run: |
+          psql -c "CREATE DATABASE theracare_clean"
+          python db/seed.py
+          python db/seed.py --clean --dbname theracare_clean
+
+      - name: Self-test (planted defects caught exactly, clean data passes)
+        run: python -m pytest tests/test_selftest.py --html=reports/selftest.html --self-contained-html
+
+      - name: Rule suite on clean data
+        env:
+          PGDATABASE: theracare_clean
+        run: python -m pytest tests/test_rules.py --html=reports/theracare_clean/report.html --self-contained-html
+
+      - name: Performance budget and indexes
+        run: python -m pytest tests/test_performance.py -s
+
+      - name: AI layer
+        run: python -m pytest tests/test_ai.py
+
+      - name: Defect detection demo (planted data, failures expected)
+        continue-on-error: true
+        run: python -m pytest tests/test_rules.py --html=reports/theracare/report.html --self-contained-html
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports
+          path: |
+            reports/
+            db/planted_defects.json

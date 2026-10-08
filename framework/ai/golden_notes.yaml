@@ -1,0 +1,82 @@
+# Golden set for AI output evaluation: 10 fully synthetic session notes.
+# `facts` must appear verbatim in a good summary (checked deterministically).
+# Two notes deliberately contain contact details (fictional 555-01xx numbers, example.com
+# addresses) that the summary must NOT repeat.
+
+- id: G01
+  facts: {initials: J.M., date: 2026-03-14, cpt: "97110"}
+  expected_summary: J.M. completed 45 minutes of therapeutic exercise (97110) on 2026-03-14 with less knee pain; continue plan.
+  note: >
+    S: Patient J.M. reports knee pain down from 6/10 to 3/10 since last week. O: Therapeutic exercise
+    (CPT 97110), 45 minutes on 2026-03-14; completed 3x12 step-ups and terminal knee extensions without
+    increased pain. A: Progressing toward short-term goals. P: Continue current plan of care, add balance work.
+
+- id: G02
+  facts: {initials: A.R., date: 2026-02-02, cpt: "92507"}
+  expected_summary: A.R. had 30 minutes of speech-language treatment (92507) on 2026-02-02 with 80% accuracy on /s/ in phrases.
+  note: >
+    S: Patient A.R., age 7, attended with mother, who reports more intelligible speech at school. O: Speech-language
+    treatment (CPT 92507), 30 minutes on 2026-02-02; produced /s/ in phrases with 80% accuracy given minimal cues.
+    A: Gains consistent with plan of care. P: Move to sentence-level /s/ practice; home program sent with mother.
+
+- id: G03
+  facts: {initials: T.K., date: 2026-01-20, cpt: "90837"}
+  expected_summary: T.K. attended a 60-minute psychotherapy session (90837) on 2026-01-20 reporting improved sleep; continue CBT.
+  note: >
+    S: Patient T.K. describes improved sleep and fewer panic episodes this week (two versus five). O: Psychotherapy
+    (CPT 90837), 60 minutes on 2026-01-20; practised cognitive restructuring for work-related worry. A: Responding
+    well to CBT. P: Continue weekly sessions; introduce graded exposure next visit.
+
+- id: G04
+  facts: {initials: L.O., date: 2026-04-08, cpt: "97530"}
+  expected_summary: L.O. completed 45 minutes of therapeutic activities (97530) on 2026-04-08 with improved fine-motor tasks.
+  note: >
+    S: Patient L.O. reports dropping fewer objects at home. O: Therapeutic activities (CPT 97530), 45 minutes on
+    2026-04-08; buttoned a shirt independently in 2 minutes, down from 4. A: Fine-motor coordination improving.
+    P: Continue plan; progress to shoelace tying.
+
+- id: G05
+  facts: {initials: M.S., date: 2026-03-03, cpt: "97161"}
+  expected_summary: M.S. had a physical therapy evaluation (97161) on 2026-03-03 for low back pain; plan of care twice weekly for 6 weeks.
+  note: >
+    S: Patient M.S. presents with low back pain for 3 weeks after lifting at work; contact on file (312) 555-0143.
+    O: Physical therapy evaluation (CPT 97161), 60 minutes on 2026-03-03; lumbar flexion limited by 50%, negative
+    straight-leg raise. A: Mechanical low back pain, good rehab potential. P: Plan of care twice weekly for 6 weeks.
+
+- id: G06
+  facts: {initials: D.P., date: 2026-02-17, cpt: "90834"}
+  expected_summary: D.P. attended a 45-minute psychotherapy session (90834) on 2026-02-17; mood stable, continue biweekly sessions.
+  note: >
+    S: Patient D.P. reports stable mood and returning to part-time work. O: Psychotherapy (CPT 90834), 45 minutes
+    on 2026-02-17; reviewed relapse-prevention plan. A: Symptoms in partial remission. P: Reduce to biweekly sessions.
+
+- id: G07
+  facts: {initials: R.B., date: 2026-05-11, cpt: "97140"}
+  expected_summary: R.B. received 30 minutes of manual therapy (97140) on 2026-05-11 for shoulder stiffness with improved range of motion.
+  note: >
+    S: Patient R.B. reports shoulder stiffness in the mornings. O: Manual therapy (CPT 97140), 30 minutes on
+    2026-05-11; shoulder flexion improved from 120 to 140 degrees after joint mobilisation. A: Range of motion improving.
+    P: Continue plan; add a home stretching program.
+
+- id: G08
+  facts: {initials: C.N., date: 2026-01-29, cpt: "92523"}
+  expected_summary: C.N. had a speech-language evaluation (92523) on 2026-01-29 showing a moderate expressive language delay; therapy weekly.
+  note: >
+    S: Patient C.N., age 4, referred by pediatrician; father can be reached at cn.family@example.com. O: Speech-language
+    evaluation (CPT 92523), 60 minutes on 2026-01-29; standardized testing shows a moderate expressive language delay.
+    A: Will benefit from skilled therapy. P: Weekly treatment for 12 weeks.
+
+- id: G09
+  facts: {initials: H.V., date: 2026-04-22, cpt: "97535"}
+  expected_summary: H.V. completed 30 minutes of self-care training (97535) on 2026-04-22 and now dresses independently.
+  note: >
+    S: Patient H.V. reports dressing without help for the first time since surgery. O: Self-care training (CPT 97535),
+    30 minutes on 2026-04-22; dressed upper and lower body with adaptive equipment, no assistance. A: Goal met for dressing.
+    P: Focus next sessions on bathing transfers.
+
+- id: G10
+  facts: {initials: E.W., date: 2026-03-30, cpt: "90791"}
+  expected_summary: E.W. had a 60-minute diagnostic evaluation (90791) on 2026-03-30 for anxiety; start weekly psychotherapy.
+  note: >
+    S: Patient E.W. reports persistent worry and poor concentration for 6 months. O: Psychiatric diagnostic evaluation
+    (CPT 90791), 60 minutes on 2026-03-30; GAD-7 score 14. A: Generalized anxiety, moderate. P: Begin weekly psychotherapy.

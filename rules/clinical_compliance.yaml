@@ -1,0 +1,61 @@
+# Clinical compliance: documentation and consent rules payers and auditors enforce.
+
+- id: CC-001
+  name: Claim billed without a signed note
+  category: clinical_compliance
+  severity: critical
+  description: >
+    A claim was submitted for a session that has no signed clinical note. Billing for
+    undocumented services is a compliance and audit-recovery risk.
+  tags: [billing, anti-join]
+  expectation: zero_rows
+  sql: |
+    SELECT c.claim_id::text AS defect_key,
+           c.claim_id,
+           c.claim_number,
+           c.session_id,
+           c.submitted_at
+    FROM claims c
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM clinical_notes n
+        WHERE n.session_id = c.session_id
+          AND n.signed_at IS NOT NULL
+    )
+
+- id: CC-002
+  name: Note signed more than 72 hours after the session
+  category: clinical_compliance
+  severity: medium
+  description: >
+    Documentation policy requires notes to be signed within 72 hours of the session ending.
+  tags: [timeliness]
+  expectation: zero_rows
+  sql: |
+    SELECT n.note_id::text AS defect_key,
+           n.note_id,
+           n.session_id,
+           s.end_time AS session_end,
+           n.signed_at,
+           round(extract(epoch FROM n.signed_at - s.end_time) / 3600, 1) AS hours_to_sign
+    FROM clinical_notes n
+    JOIN sessions s ON s.session_id = n.session_id
+    WHERE n.signed_at > s.end_time + interval '72 hours'
+
+- id: CC-003
+  name: Minor patient without a guardian
+  category: clinical_compliance
+  severity: high
+  description: >
+    A patient under 18 must have a legal guardian on file to consent to treatment.
+  tags: [consent, anti-join]
+  expectation: zero_rows
+  sql: |
+    SELECT p.patient_id::text AS defect_key,
+           p.patient_id,
+           p.practice_id,
+           p.date_of_birth,
+           date_part('year', age(current_date, p.date_of_birth)) AS age_years
+    FROM patients p
+    WHERE p.date_of_birth > current_date - interval '18 years'
+      AND NOT EXISTS (SELECT 1 FROM guardians g WHERE g.patient_id = p.patient_id)

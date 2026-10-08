@@ -1,0 +1,6 @@
+psycopg[binary]==3.2.*
+PyYAML==6.0.*
+pytest==8.*
+pytest-html==4.*
+ruff==0.8.*
+anthropic>=1.11,<2

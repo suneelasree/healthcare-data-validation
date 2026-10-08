@@ -1,0 +1,159 @@
+# Data integrity: keys, orphans, required fields and duplicate identities.
+# Contract: a pass/fail rule returns one row per violation, and its first column
+# is `defect_key`, a stable identifier the self-test matches against the manifest.
+
+- id: DI-001
+  name: Duplicate MRN within a practice
+  category: data_integrity
+  severity: high
+  description: >
+    A medical record number is the patient's business key and must be unique within
+    a practice. A reused MRN merges two patients' charts and bills.
+  tags: [keys, group-by]
+  expectation: zero_rows
+  sql: |
+    SELECT practice_id || ':' || mrn                    AS defect_key,
+           practice_id,
+           mrn,
+           count(*)                                     AS patient_count,
+           array_agg(patient_id ORDER BY patient_id)    AS patient_ids
+    FROM patients
+    WHERE mrn IS NOT NULL
+    GROUP BY practice_id, mrn
+    HAVING count(*) > 1
+
+- id: DI-002
+  name: Session without an appointment
+  category: data_integrity
+  severity: high
+  description: >
+    Every attended session must trace back to a scheduled appointment. An orphan
+    session cannot be audited against the schedule.
+  tags: [orphans, anti-join]
+  expectation: zero_rows
+  sql: |
+    SELECT s.session_id::text AS defect_key,
+           s.session_id,
+           s.appointment_id,
+           s.patient_id,
+           s.session_date
+    FROM sessions s
+    WHERE NOT EXISTS (
+        SELECT 1 FROM appointments a WHERE a.appointment_id = s.appointment_id
+    )
+
+- id: DI-003
+  name: Clinical note without a session
+  category: data_integrity
+  severity: medium
+  description: >
+    A clinical note documents a session. A note whose session does not exist is
+    unreachable from the chart and cannot support a claim.
+  tags: [orphans, anti-join]
+  expectation: zero_rows
+  sql: |
+    SELECT n.note_id::text AS defect_key,
+           n.note_id,
+           n.session_id     AS missing_session_id,
+           n.provider_id,
+           n.created_at
+    FROM clinical_notes n
+    LEFT JOIN sessions s ON s.session_id = n.session_id
+    WHERE s.session_id IS NULL
+
+- id: DI-004
+  name: Required field is NULL
+  category: data_integrity
+  severity: high
+  description: >
+    Fields the product treats as mandatory (patient identity and date of birth,
+    session CPT code and minutes, claim payer and amount, appointment times) are NULL.
+  tags: [nulls, union]
+  expectation: zero_rows
+  sql: |
+    SELECT 'patients:' || patient_id AS defect_key, 'patients' AS table_name, patient_id AS row_id,
+           concat_ws(', ',
+               CASE WHEN mrn IS NULL THEN 'mrn' END,
+               CASE WHEN first_name IS NULL THEN 'first_name' END,
+               CASE WHEN last_name IS NULL THEN 'last_name' END,
+               CASE WHEN date_of_birth IS NULL THEN 'date_of_birth' END) AS null_columns
+    FROM patients
+    WHERE mrn IS NULL OR first_name IS NULL OR last_name IS NULL OR date_of_birth IS NULL
+    UNION ALL
+    SELECT 'sessions:' || session_id, 'sessions', session_id,
+           concat_ws(', ',
+               CASE WHEN patient_id IS NULL THEN 'patient_id' END,
+               CASE WHEN provider_id IS NULL THEN 'provider_id' END,
+               CASE WHEN session_date IS NULL THEN 'session_date' END,
+               CASE WHEN cpt_code IS NULL THEN 'cpt_code' END,
+               CASE WHEN billed_minutes IS NULL THEN 'billed_minutes' END)
+    FROM sessions
+    WHERE patient_id IS NULL OR provider_id IS NULL OR session_date IS NULL
+       OR cpt_code IS NULL OR billed_minutes IS NULL
+    UNION ALL
+    SELECT 'claims:' || claim_id, 'claims', claim_id,
+           concat_ws(', ',
+               CASE WHEN claim_number IS NULL THEN 'claim_number' END,
+               CASE WHEN payer_name IS NULL THEN 'payer_name' END,
+               CASE WHEN billed_amount IS NULL THEN 'billed_amount' END,
+               CASE WHEN submitted_at IS NULL THEN 'submitted_at' END)
+    FROM claims
+    WHERE claim_number IS NULL OR payer_name IS NULL OR billed_amount IS NULL OR submitted_at IS NULL
+    UNION ALL
+    SELECT 'appointments:' || appointment_id, 'appointments', appointment_id,
+           concat_ws(', ',
+               CASE WHEN start_time IS NULL THEN 'start_time' END,
+               CASE WHEN end_time IS NULL THEN 'end_time' END,
+               CASE WHEN status IS NULL THEN 'status' END)
+    FROM appointments
+    WHERE start_time IS NULL OR end_time IS NULL OR status IS NULL
+
+- id: DI-005
+  name: Duplicate patient identity
+  category: data_integrity
+  severity: medium
+  description: >
+    Two patient records in the same practice share a name (after normalising case and
+    whitespace) and a date of birth. Duplicates split clinical history and authorizations.
+  tags: [duplicates, cte, group-by]
+  expectation: zero_rows
+  sql: |
+    WITH normalized AS (
+        SELECT patient_id,
+               practice_id,
+               lower(trim(first_name)) AS first_name,
+               lower(trim(last_name))  AS last_name,
+               date_of_birth
+        FROM patients
+        WHERE date_of_birth IS NOT NULL
+    )
+    SELECT string_agg(patient_id::text, ',' ORDER BY patient_id) AS defect_key,
+           practice_id,
+           first_name,
+           last_name,
+           date_of_birth,
+           count(*) AS records
+    FROM normalized
+    GROUP BY practice_id, first_name, last_name, date_of_birth
+    HAVING count(*) > 1
+
+- id: DI-006
+  name: Past appointment still marked scheduled
+  category: data_integrity
+  severity: low
+  description: >
+    An appointment in the past should be completed, cancelled or a no-show. A few
+    stragglers are tolerated while front-desk staff catch up, so this rule uses a
+    threshold instead of zero rows.
+  tags: [status, threshold]
+  expectation:
+    max_rows: 5
+  sql: |
+    SELECT appointment_id::text AS defect_key,
+           appointment_id,
+           provider_id,
+           patient_id,
+           start_time
+    FROM appointments
+    WHERE status = 'scheduled'
+      AND start_time < current_date

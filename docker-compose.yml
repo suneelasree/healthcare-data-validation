@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: theracare
+      POSTGRES_PASSWORD: theracare   # local demo credentials only
+      POSTGRES_DB: theracare
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # TCP check: the image's init phase only listens on a socket, so this
+      # turns healthy once init scripts (the clean database) have finished.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U theracare -d theracare"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  runner:
+    build: .
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: theracare
+      PGPASSWORD: theracare
+      PGDATABASE: theracare
+      CLEAN_PGDATABASE: theracare_clean
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy

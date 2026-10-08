@@ -1,0 +1,50 @@
+# Scheduling: provider calendars must be physically possible.
+
+- id: SC-001
+  name: Provider double-booked
+  category: scheduling
+  severity: high
+  description: >
+    A provider has two non-cancelled appointments whose time ranges overlap. Self-join on
+    provider: two intervals overlap exactly when the later-starting one begins before the
+    earlier one ends. Bounding b.start_time on both sides lets the planner range-scan the
+    (provider_id, start_time) index instead of comparing every pair (~30x faster).
+  tags: [self-join, overlap, index-range-scan]
+  expectation: zero_rows
+  sql: |
+    SELECT LEAST(a.appointment_id, b.appointment_id) || '|'
+           || GREATEST(a.appointment_id, b.appointment_id) AS defect_key,
+           a.provider_id,
+           a.appointment_id AS first_appointment,
+           a.start_time     AS first_start,
+           a.end_time       AS first_end,
+           b.appointment_id AS second_appointment,
+           b.start_time     AS second_start,
+           b.end_time       AS second_end
+    FROM appointments a
+    JOIN appointments b
+      ON b.provider_id = a.provider_id
+     AND b.start_time >= a.start_time               -- b starts no earlier than a ...
+     AND b.start_time <  a.end_time                 -- ... and before a ends
+     AND (b.start_time > a.start_time OR b.appointment_id > a.appointment_id)  -- each pair once
+    WHERE a.status <> 'cancelled'
+      AND b.status <> 'cancelled'
+
+- id: SC-002
+  name: Appointment ends before it starts
+  category: scheduling
+  severity: medium
+  description: >
+    The end time is at or before the start time, which breaks duration, utilisation
+    and overlap calculations.
+  tags: [time-ranges]
+  expectation: zero_rows
+  sql: |
+    SELECT appointment_id::text AS defect_key,
+           appointment_id,
+           provider_id,
+           start_time,
+           end_time,
+           status
+    FROM appointments
+    WHERE end_time <= start_time

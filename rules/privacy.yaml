@@ -1,0 +1,30 @@
+# Privacy: de-identified text must not contain direct identifiers.
+
+- id: PR-001
+  name: Identifier pattern in a de-identified note
+  category: privacy
+  severity: critical
+  description: >
+    A note in the de-identified analytics table still matches an SSN, phone number or
+    email pattern. The evidence names the pattern type only, so the report itself never
+    re-exposes the identifier.
+  tags: [phi, regex]
+  expectation: zero_rows
+  sql: |
+    WITH patterns AS (
+        SELECT deid_id,
+               note_id,
+               deid_text ~ '\d{3}-\d{2}-\d{4}'                            AS has_ssn,
+               deid_text ~ '\(?\d{3}\)?[-. ]?\d{3}[-.]\d{4}'               AS has_phone,
+               deid_text ~* '[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}'        AS has_email
+        FROM deid_notes
+    )
+    SELECT deid_id::text AS defect_key,
+           deid_id,
+           note_id,
+           concat_ws(', ',
+               CASE WHEN has_ssn THEN 'ssn' END,
+               CASE WHEN has_phone THEN 'phone' END,
+               CASE WHEN has_email THEN 'email' END) AS patterns_found
+    FROM patterns
+    WHERE has_ssn OR has_phone OR has_email

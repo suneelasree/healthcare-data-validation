@@ -1,0 +1,20 @@
+# Telehealth: billed time must be supported by the video platform's own log.
+
+- id: TH-001
+  name: Billed minutes exceed actual video minutes
+  category: telehealth
+  severity: high
+  description: >
+    A telehealth session billed more than 5 minutes beyond the duration recorded by
+    the video platform. Time-based CPT codes must be supported by actual contact time.
+  tags: [reconciliation, time-ranges]
+  expectation: zero_rows
+  sql: |
+    SELECT s.session_id::text AS defect_key,
+           s.session_id,
+           s.cpt_code,
+           s.billed_minutes,
+           round(extract(epoch FROM t.video_end - t.video_start) / 60, 1) AS video_minutes
+    FROM sessions s
+    JOIN telehealth_logs t ON t.session_id = s.session_id
+    WHERE s.billed_minutes - extract(epoch FROM t.video_end - t.video_start) / 60 > 5

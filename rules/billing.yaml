@@ -1,0 +1,110 @@
+# Billing and revenue cycle: claims (EDI 837) reconciled against remittances (EDI 835).
+
+- id: BR-001
+  name: Underpayment against contract
+  category: billing
+  severity: high
+  description: >
+    A paid remittance is more than 2% below the contracted amount for that practice,
+    payer and CPT code. The 2% tolerance absorbs rounding and small adjustments.
+  tags: [reconciliation, contracts]
+  expectation: zero_rows
+  sql: |
+    SELECT c.claim_id::text AS defect_key,
+           c.claim_id,
+           c.payer_name,
+           c.cpt_code,
+           pc.contracted_amount,
+           r.paid_amount,
+           round(100 * (1 - r.paid_amount / pc.contracted_amount), 1) AS short_pct
+    FROM claims c
+    JOIN remittances r
+      ON r.claim_id = c.claim_id
+     AND r.denial_code IS NULL
+    JOIN payer_contracts pc
+      ON pc.practice_id = c.practice_id
+     AND pc.payer_name = c.payer_name
+     AND pc.cpt_code = c.cpt_code
+    WHERE r.paid_amount < pc.contracted_amount * 0.98
+
+- id: BR-002
+  name: Claim with no remittance after 45 days
+  category: billing
+  severity: medium
+  description: >
+    A claim submitted more than 45 days ago has no payer response. It needs follow-up
+    before it ages past the payer's timely-filing limit.
+  tags: [aging, anti-join]
+  expectation: zero_rows
+  sql: |
+    SELECT c.claim_id::text AS defect_key,
+           c.claim_id,
+           c.claim_number,
+           c.payer_name,
+           c.submitted_at,
+           current_date - c.submitted_at::date AS days_outstanding
+    FROM claims c
+    WHERE c.submitted_at < now() - interval '45 days'
+      AND NOT EXISTS (SELECT 1 FROM remittances r WHERE r.claim_id = c.claim_id)
+
+- id: BR-003
+  name: Paid claim version is not the latest
+  category: billing
+  severity: high
+  description: >
+    A resubmitted claim keeps its claim number and increments the version. Only the
+    latest version should be paid; a payment against an older version means the
+    payer and the practice disagree about what was billed.
+  tags: [window-function, row-number, cte]
+  expectation: zero_rows
+  sql: |
+    WITH ranked AS (
+        SELECT claim_id,
+               claim_number,
+               version,
+               ROW_NUMBER() OVER (PARTITION BY claim_number ORDER BY version DESC) AS recency
+        FROM claims
+    )
+    SELECT paid.claim_number AS defect_key,
+           paid.claim_number,
+           paid.version      AS paid_version,
+           latest.version    AS latest_version,
+           r.paid_amount
+    FROM ranked paid
+    JOIN remittances r
+      ON r.claim_id = paid.claim_id
+     AND r.denial_code IS NULL
+    JOIN ranked latest
+      ON latest.claim_number = paid.claim_number
+     AND latest.recency = 1
+    WHERE paid.recency > 1
+
+- id: BR-004
+  name: Top 3 denial codes per payer
+  category: billing
+  severity: low
+  description: >
+    Report-only. Ranks each payer's denial reasons so the billing team can target the
+    root causes that cost the most.
+  tags: [window-function, rank, report]
+  expectation: report_only
+  sql: |
+    WITH denials AS (
+        SELECT c.payer_name, r.denial_code, count(*) AS denials
+        FROM remittances r
+        JOIN claims c ON c.claim_id = r.claim_id
+        WHERE r.denial_code IS NOT NULL
+        GROUP BY c.payer_name, r.denial_code
+    ),
+    ranked AS (
+        SELECT payer_name,
+               denial_code,
+               denials,
+               RANK() OVER (PARTITION BY payer_name ORDER BY denials DESC) AS denial_rank,
+               round(100.0 * denials / sum(denials) OVER (PARTITION BY payer_name), 1) AS pct_of_payer_denials
+        FROM denials
+    )
+    SELECT payer_name, denial_rank, denial_code, denials, pct_of_payer_denials
+    FROM ranked
+    WHERE denial_rank <= 3
+    ORDER BY payer_name, denial_rank
